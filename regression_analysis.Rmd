@@ -1,0 +1,384 @@
+---
+title: 'Regression Analysis: Household Food Spending and Podcast Listens'
+author: 'Ankita Mullagiri'
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+---
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(emmeans)
+library(dplyr)
+library(lubridate)
+library(gridExtra)
+library(kableExtra)
+options(width=100) 
+knitr::opts_chunk$set(echo = TRUE)
+options(width = 100)
+```
+
+
+# Part 1: Household food expenditure
+Contains the codes and outputs to the first question
+
+## 1. Data Dictionary
+A data dictionary is created to to clarify what each variable represents.
+
+| Column            | Description                                             |
+|-------------------|---------------------------------------------------------|
+| Kids              | Number of children in the household                     |
+| HouseholdSize     | Total number of people in the household                 |
+| Sex               | Sex of the survey respondent                            |
+| Vehicles          | Number of vehicles owned by the household               |
+| Food              | Average weekly expenditure on food (£)                  |
+| Housing           | Average weekly expenditure on accommodation (£)         |
+| Alcohol           | Average weekly expenditure on alcohol (£)               |
+| Debt              | Average weekly expenditure on debt repayments (£)       |
+| income_category   | Household income group (low / medium / high)            |
+
+## 2. Loading the dataset
+
+```{r}
+#Reading the Household Expenditure dataset
+house <-read_csv("HouseholdExpenditure.csv")
+house
+```
+
+
+## 3. Data Integrity and Preparation
+
+```{r}
+#The structure of the dataset is inspected to confirm numeric and categorical variables.
+str(house)
+```
+
+```{r}
+#Converting 'Sex' and 'Income category' to categorical variables as they represent qualitative data and not numeric.
+house <- house %>%
+  mutate(
+    Sex= factor(Sex),
+    income_category= factor(income_category)
+  )
+```
+
+```{r}
+#The structure of the dataset is printed to check if the two variables are now treated as categorical variables.
+str(house)
+```
+
+```{r}
+#The summary statistics of the dataset is printed
+summary(house)
+```
+
+```{r}
+#Check for missing values in each column
+(total_missing_val <-sum(is.na(house)))
+(col_missing_val <-colSums(is.na(house)))
+```
+
+Before modelling, the dataset is checked for issues like missing values, invalid entries, and variable types. This step ensures the regression model is estimated on clean, interpretable inputs and reduces the risk of biased or misleading results.
+```{r}
+#Dropping rows with NA values
+house_clean <- house %>%drop_na()
+```
+
+```{r}
+#Checking for odd values in categorical variables
+unique(house_clean$Sex)
+unique(house_clean$income_category)
+```
+The numerical variables fall within sensible ranges and the categorical variables do not have any odd values. A small number of rows contained missing values and are removed.
+
+## 4. EDA
+
+Exploratory visualisations are used to understand direction/shape of relationships and whether an interaction is plausible.
+```{r}
+#Plotting a histogram to check the distribution of "Weekly Food Expenditure"
+ggplot(house_clean, aes(x = Food)) +
+  geom_histogram(binwidth = 1) +
+  labs(title = "Distribution of weekly food expenditure",
+       x = "Weekly food expenditure (£)", y = "Count") 
+```
+
+Food Expenditure is unimodal, with most households spending between 40-70 GBP per week
+
+```{r}
+#Plotting a scatter plot to study the relationship between 'Food' and 'Alcohol'
+ggplot(house_clean, aes(x = Alcohol, y = Food)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = lm) +
+  labs(
+    title = "Food vs Alcohol Expenditure",
+    x = "Weekly Alcohol Expenditure (£)",
+    y = "Weekly Food Expenditure (£)"
+  )
+
+```
+
+The plot shows a weak upaward trend, meaning higher alcohol spending is not strongly associated with higher food spending.
+
+```{r}
+#Plotting a scatter plot to study the relationship between 'Food' and 'Debt'
+ggplot(house_clean, aes(x = Debt, y = Food)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = lm) +
+  labs(
+    title = "Food vs Debt Expenditure",
+    x = "Weekly Debt Repayments (£)",
+    y = "Weekly Food Expenditure (£)"
+  )
+```
+
+The plot does not show a clear pattern. Debt barely exhibits any relationship with food spending.
+
+## 5. Modelling
+Examining the effect of the variables upon food expenditure.
+```{r}
+#Building a multiple linear regression to study the affect of each variable on weekly food expenditure
+m1 <- lm(
+  Food ~ HouseholdSize + Kids + Sex + Vehicles + Housing + Alcohol + Debt + income_category,
+  data = house_clean
+)
+summary(m1)
+
+```
+
+In this model, alcohol expenditure is positively associated with food spending, whereas, debt exhibits a negative association.
+
+Housing expenditure has a strong positive effect (t(4073)=26.24, p<.001): each one-unit increase in housing spend predicts an average 0.09-unit increase in food expenditure. Alcohol expenditure also has a significant positive effect (t(4073)=6.22, p<.001), with each additional unit predicting a 0.39-unit increase in food spending. In contrast, debt expenditure has a significant negative effect (t(4073)=−5.06, p<.001), with each unit increase in debt predicting a 0.05-unit decrease in food expenditure.
+
+Household size, number of children, sex, and income category do not significantly predict food spending, while the number of vehicles shows only weak evidence of an effect (p=.096).
+
+The overall model is statistically significant, F(9, 4073)=82.10, p<.001, and explains about 15% of the variance in weekly food expenditure (adjusted R² = .152).
+
+```{r}
+#Building an interaction model to see whether the effect of alcohol on food expenditure changes across debt levels
+m2 <- lm(
+  Food ~ Alcohol * Debt + HouseholdSize + Kids + Sex + Vehicles + Housing + income_category,
+  data = house_clean
+)
+summary(m2)
+
+```
+
+The relationship between alcohol and food expenditure does not vary meaningfully with debt levels.
+
+Alcohol expenditure remains a significant positive predictor of food spending (t(4072)=2.45, p=.014), and housing expenditure continues to show a strong positive effect (t(4072)=26.22, p<.001). Other household characteristics (size, children, sex, income) remain non-significant, with vehicles showing only weak evidence of an effect (p=.098).
+
+Crucially, the Alcohol × Debt interaction is not significant (t(4072)=−0.50, p=.619), indicating that the relationship between alcohol and food expenditure does not vary across levels of debt. The model remains statistically significant overall, F(10, 4072)=73.9, p<.001, but explains essentially the same proportion of variance (adjusted R² = .152).
+
+```{r}
+#Plotting a scatter plot to visualize how the relationship between alcohol and food expenditure varies across levels of debts
+house_clean <- house_clean %>%
+  mutate(
+    DebtGroup3 = case_when(
+      Debt <= quantile(Debt, 1/3) ~ "Low debt",
+      Debt <= quantile(Debt, 2/3) ~ "Medium debt",
+      TRUE ~ "High debt"
+    )
+  )
+
+ggplot(house_clean, aes(x = Alcohol, y = Food, colour = DebtGroup3)) +
+  geom_point(alpha = 0.25) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    x = "Alcohol Expenditure",
+    y = "Food Expenditure",
+    colour = "Debt Level",
+    title = "Effect of Alcohol on Food Expenditure by Debt Level"
+  )
+```
+
+Regression lines for the debts levels are nearly parallel. Visually confirming the absence of a meaningful interaction.
+```{r}
+#Comparing the two models using ANOVA
+anova(m1, m2)
+```
+An ANOVA comparison confirms that adding the AlcoholxDebt interaction does not improve the model.
+F(1, 4072)=0.25, p=.619. The reduction in residual sum of squares is negligible, indicating that the interaction explains no meaningful additional variance in food expenditure.
+
+## 6. Conclusion
+1. Alcohol speding is associated with slightly higher food expenditure.
+2. Debt on its own does not strongly predict food spending.
+3. Debt does not alter the relationship between alcohol and food.
+
+Food spending is mainly driven by how much households already spend on essentials and lifestyle items. People who spend more on housing and alcohol also tend to spend more on food. In contrast, higher debt is linked to slightly lower food spending, suggesting that financial pressure may limit how much households can allocate to food.
+Other characteristics such as household size, number of children, sex, and income category do not meaningfully change food expenditure once these spending factors are taken into account.
+Crucially, debt does not change how alcohol spending relates to food spending. Both the regression results and the plot show that the relationship between alcohol and food is consistent across low-, medium-, and high-debt households. In simple terms, households that spend more on alcohol tend to spend more on food, regardless of how much debt they have.
+
+---
+# Part 2: Podcast daily listens
+Contains the codes and outputs to the first question
+
+## 1. Data Dictionary
+A data dictionary is created to to clarify what each variable represents.
+
+| Column         | Description                                         |
+|----------------|-----------------------------------------------------|
+| Platform       | Platform hosting the podcast (e.g. Spotify, Apple) |
+| genre          | Podcast genre/category                              |
+| avg.review     | Average user review score                           |
+| daily.listens  | Average number of daily listens                     |
+| total.reviews  | Total number of user reviews                        |
+| subscribers    | Number of subscribers to the podcast                |
+
+## 2. Loading the dataset
+
+```{r}
+#Reading the Household Expenditure dataset
+pod <- read_csv("podcast_listens.csv")
+(pod)
+```
+
+## 3. Data Integrity and Preparation
+Before modelling, the dataset is checked for issues like missing values, invalid entries, and variable types. This step ensures the regression model is estimated on clean, interpretable inputs and reduces the risk of biased or misleading results.
+```{r}
+#The structure of the dataset is inspected to confirm numeric and categorical variables.
+str(pod)
+```
+```{r}
+#Converting 'Genre' to categorical variables as they represent qualitative data and not numeric.
+pod$genre <- as.factor(pod$genre)
+str(pod)
+```
+
+```{r}
+#The summary statistics of the dataset is printed
+summary(pod)
+```
+
+```{r}
+#Check for missing values in each column
+total_missing_pod <- sum(is.na(pod))
+col_missing_pod <- colSums(is.na(pod))
+total_missing_pod
+col_missing_pod
+```
+
+```{r}
+#Checking for odd values in categorical variables
+unique(pod$Platform)
+unique(pod$genre)
+```
+
+```{r}
+#Plotting Box-Plots to check for outliers
+ggplot(pod, aes(y = avg.review)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Average Review",
+       y = "Average Review Score")
+```
+
+
+```{r}
+#Plotting Box-Plots to check for outliers
+ggplot(pod, aes(y = subscribers)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Subscribers",
+       y = "Number of Subscribers")
+```
+
+```{r}
+# Remove invalid rating values and subscriber counts
+pod_clean <- pod %>%
+  filter(subscribers >= 0, avg.review <= 5)
+```
+Average review scores should lie between 0 and 5 so extreme values such as 100 indicate data errors and are excluded. 
+Negative values in subscriber counts are likely data errors and would influence the model, so they are excluded.
+
+## 4. EDA
+
+Exploratory visualisations are used to understand direction/shape of relationships and whether an interaction is plausible.
+```{r}
+#Plotting a histogram to check the distribution of "Daily Podcast Listens"
+ggplot(pod_clean, aes(x = daily.listens)) +
+  geom_histogram(binwidth = 1) +
+  labs(title = "Distribution of Daily Podcast Listens",
+       x = "Daily Listens", y = "Frequency") 
+```
+
+Daily listens are approximately unimodal, with most podcasts clustering around a narrow central range
+```{r}
+#Plotting a scatter plot to study the relationship between 'Daily Listens' and 'Avg Reviews'
+ggplot(pod_clean, aes(avg.review, daily.listens)) +
+  geom_point(alpha = 0.3)+ 
+  geom_smooth(method = lm)
+```
+
+Average review score shows little association with daily listens, suggesting that ratings alone do not strongly drive listening behaviour.
+```{r}
+#Plotting a scatter plot to study the relationship between 'Daily Listens' and 'Total Reviews'
+ggplot(pod_clean, aes(total.reviews, daily.listens)) +
+  geom_point(alpha = 0.3)+ 
+  geom_smooth(method = lm)
+```
+
+Podcasts with more total reviews tend to receive higher daily listens, indicating popularity and visibility effects.
+```{r}
+#Plotting a scatter plot to study the relationship between 'Daily Listens' and 'Subscribers'
+ggplot(pod_clean, aes(subscribers, daily.listens)) +
+  geom_point(alpha = 0.3)+ 
+  geom_smooth(method = lm)
+```
+
+A weak negative trend is observed, suggesting that higher subscriber counts do not necessarily translate into higher daily listens.
+
+## 5. Modelling
+Examining the effect of the variables upon daily listens using Multiple Regression
+```{r}
+#Building a multiple linear regression model to assess how all the characteristics affect daily listens.
+m_pod1 <- lm(
+  daily.listens ~ avg.review + total.reviews + subscribers + genre,
+  data = pod_clean
+)
+summary(m_pod1)
+
+```
+
+Both total reviews (t=36.76, p<.001) and subscribers (t=32.10, p<.001) are large, positive predictors of daily listens: podcasts with more reviews and more subscribers receive substantially more listens. In contrast, average review score has a small but significant negative association (t=−7.60, p<.001), suggesting that higher-rated shows do not necessarily attract more listeners once popularity is accounted for.
+
+Genre also matters. Compared to Comedy, Documentary podcasts receive about 458 fewer daily listens (t=−99.57, p<.001) and News & Culture about 173 fewer (t=−47.92, p<.001), holding other factors constant.
+
+The overall model is highly significant, F(5, 5370)=2386, p<.001, and explains nearly 69% of the variance in daily podcast listens (adjusted R² = .689), indicating excellent explanatory power.
+
+```{r}
+#Fitting an interaction regression model to test whether the effect of subscriber count on daily podcast listens differs across genre
+m_pod2 <- lm(
+  daily.listens ~ avg.review + total.reviews + subscribers * genre,
+  data = pod_clean
+)
+summary(m_pod2)
+```
+
+The interaction model shows that while total reviews and subscribers remain strong positive predictors of daily listens (both p<.001), the effect of subscribers is not uniform across genres. The Subscribers × Documentary interaction is statistically significant (t=−2.96, p=.003), indicating that each additional subscriber leads to a smaller increase in listens for Documentary podcasts compared to Comedy. The interaction for News & Culture is weaker and only marginal (p=.084).
+The model is highly significant overall, F(7, 5368)=1715, p<.001, and explains about 69% of the variance in daily listens (adjusted R² = .691), showing that subscriber growth translates into listening differently depending on genre.
+```{r}
+#Plotting a scatter plot with fitted regression lines to visualise how the relationship between subscriber count and daily listens varies across podcast genres.
+ggplot(pod_clean, aes(x = subscribers, y = daily.listens, colour = genre)) +
+  geom_point(alpha = 0.25) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "Effect of Subscribers on Daily Listens by Genre",
+    x = "Number of Subscribers",
+    y = "Daily Listens"
+  )
+```
+
+The scatter plot with fitted regression lines illustrates that the relationship between subscriber count and daily listens varies by genre. Comedy podcasts exhibit the steepest growth in listens as subscribers increase, while Documentary and News & Culture show more moderate gains. This visual pattern aligns with the significant interaction terms in the regression model.
+```{r}
+anova(m_pod1, m_pod2)
+```
+
+The ANOVA comparison shows that the interaction model fits the data significantly better than the additive model, F(2, 5368)=11.72, p < .001. This indicates that allowing the effect of subscribers to vary by genre provides a meaningful improvement in explanatory power.
+In other words, the relationship between subscriber count and daily listens is not the same across genres, and modelling this interaction captures important structure in the data that the simpler model misses.
+
+## 6. Conclusion
+1. Daily podcast listens increase strongly with both subscriber count and total number of reviews.
+2. Average review score has a much weaker influence on listening once popularity is taken into account.
+3. The effect of subscribers on daily listens differs by genre, with Comedy podcasts benefiting most from subscriber growth.
+
+Overall, podcasts with more subscribers and more reviews receive far more daily listens, making popularity and audience size the strongest drivers of listening behaviour. Average review score plays a much smaller role once these factors are taken into account. Listening levels also differ by genre, with Comedy podcasts attracting the highest baseline audience.
+Crucially, the impact of gaining subscribers is not the same for all genres. While subscriber growth increases listens across the board, Comedy podcasts convert new subscribers into listens more effectively than Documentary shows, which experience smaller gains for each additional subscriber. This means that growth strategies may be more effective in some genres than others, and platforms should not assume that subscriber increases translate into equal listening gains across all types of content.
